@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using RestaurantReservation.API.Models;
 using RestaurantReservation.API.Services;
 using RestaurantReservation.API.DTOs;
+using System.Security.Claims;
 
 namespace RestaurantReservation.API.Controllers;
 
@@ -18,10 +19,28 @@ public class ReservationsController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "Admin")] //403
     public async Task<ActionResult<IEnumerable<Reservation>>> GetReservations()
     {
         var reservations = await _reservationService.GetReservationsAsync();
+        return Ok(reservations);
+    }
+
+    [HttpGet("my-reservations")]
+    public async Task<ActionResult<IEnumerable<Reservation>>> GetMyReservations([FromQuery] string userId)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            var userIdFromToken = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+            userId = userIdFromToken;
+        }
+
+        var reservations = await _reservationService.GetReservationsAsync();
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            reservations = reservations.Where(r => r.UserId == userId).ToList();
+        }
+
         return Ok(reservations);
     }
 
@@ -31,17 +50,18 @@ public class ReservationsController : ControllerBase
         var reservation = await _reservationService.GetReservationByIdAsync(id);
 
         if (reservation == null)
-            return NotFound(new { message = "Rezervarea nu a fost găsită." }); //404
+            return NotFound(new { message = "Rezervarea nu a fost găsită." });
 
-        return Ok(reservation); //200
+        return Ok(reservation);
     }
 
     [HttpPost]
+    [AllowAnonymous]
     public async Task<IActionResult> CreateReservation([FromBody] CreateReservationDto dto)
     {
         if (!ModelState.IsValid)
         {
-            return BadRequest(ModelState); //400
+            return BadRequest(ModelState);
         }
 
         var reservation = new Reservation
@@ -55,7 +75,7 @@ public class ReservationsController : ControllerBase
 
         await _reservationService.CreateReservationAsync(reservation);
 
-        return CreatedAtAction(nameof(GetReservation), new { id = reservation.Id }, reservation); //201
+        return CreatedAtAction(nameof(GetReservation), new { id = reservation.Id }, reservation);
     }
 
     [HttpPut("{id}")]
@@ -74,11 +94,10 @@ public class ReservationsController : ControllerBase
             throw;
         }
 
-        return NoContent(); //204
+        return NoContent();
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeleteReservation(int id)
     {
         var reservation = await _reservationService.GetReservationByIdAsync(id);
